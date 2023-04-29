@@ -7,7 +7,6 @@ import android.media.AudioManager;
 import android.content.Context;
 import android.util.Log;
 import android.view.KeyEvent;
-import android.view.View;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -32,7 +31,7 @@ public class Hook implements IXposedHookLoadPackage {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 super.afterHookedMethod(param);
-//                stopPlay();
+                stopPlay();
                 LogQuick("@@@@ AFTER CLICK");
             }
         });
@@ -52,13 +51,13 @@ public class Hook implements IXposedHookLoadPackage {
         });
     }
 
-//    private void stopPlay() throws Throwable {
-//        LogQuick("%%%% stopPlay");
-//        Context context = (Context) AndroidAppHelper.currentApplication();
-//        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-//        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE));
-//        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE));
-//    }
+    private void stopPlay() throws Throwable {
+        LogQuick("%%%% stopPlay");
+        Context context = (Context) AndroidAppHelper.currentApplication();
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE));
+        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE));
+    }
 
     private void LogQuick(String msg) throws Throwable {
         Log.d("XPOSED TEST", msg);
