@@ -20,38 +20,40 @@ public class Hook implements IXposedHookLoadPackage {
         if(!loadPackageParam.packageName.equals("com.netease.cloudmusic")){
             return;
         }
-        monitorClickFunction(loadPackageParam);
+        ClassLoader classLoader = loadPackageParam.classLoader;
 
-        XposedHelpers.findAndHookMethod("com.netease.cloudmusic.activity.p7", loadPackageParam.classLoader, "A7", new XC_MethodHook() {
-            @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                super.beforeHookedMethod(param);
-                LogQuick("~~~~ BEFORE CLICK");
-            }
+        monitorClickFunction(classLoader);
+
+        final Class c = classLoader.loadClass("com.netease.cloudmusic.service.PlayService");
+        XposedBridge.hookAllMethods(c, "next", new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 super.afterHookedMethod(param);
+                if(param.args.length != 3){
+                    LogQuick("因为参数数量不符合，所以跳过这个函数，避免多个next重载函数的重复触发");
+                    return;
+                }
+                //触发public void next(boolean z, boolean z2, @Nullable MusicEndConfig musicEndConfig)
+                LogQuick("触发next函数");
                 stopPlay();
-                LogQuick("@@@@ AFTER CLICK");
             }
         });
     }
 
-    public void monitorClickFunction(XC_LoadPackage.LoadPackageParam loadPackageParam) throws Throwable {
-        Class clazz = XposedHelpers.findClass("android.view.View", loadPackageParam.classLoader);
-        XposedBridge.hookAllMethods(clazz, "performClick", new XC_MethodHook() {
+    public static void monitorClickFunction(ClassLoader classLoader) throws Throwable {
+            XposedBridge.hookAllMethods(XposedHelpers.findClass("android.view.View", classLoader), "performClick", new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 super.afterHookedMethod(param);
                 Object listenerInfoObject = XposedHelpers.getObjectField(param.thisObject, "mListenerInfo");
                 Object mOnClickListenerObject = XposedHelpers.getObjectField(listenerInfoObject, "mOnClickListener");
                 String callbackType = mOnClickListenerObject.getClass().getName();
-                LogQuick("CLICK FUNCTION : " + callbackType);
+                LogQuick("---- ---- ---- ---- CLICK FUNCTION : " + callbackType);
             }
         });
     }
 
-    private void stopPlay() throws Throwable {
+    private static void stopPlay() throws Throwable {
         LogQuick("%%%% stopPlay");
         Context context = (Context) AndroidAppHelper.currentApplication();
         AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -59,7 +61,19 @@ public class Hook implements IXposedHookLoadPackage {
         audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE));
     }
 
-    private void LogQuick(String msg) throws Throwable {
+    private static void LogQuick(String msg) throws Throwable {
         Log.d("XPOSED TEST", msg);
+        XposedBridge.log(msg);
+    }
+
+    private static void printStackTrace() throws Throwable {
+        Throwable ex = new Throwable();
+        StackTraceElement[] stackElements = ex.getStackTrace();
+        LogQuick("{{{{ {{{{ {{{{ STACK TRACK");
+        for (int i = 0; i < stackElements.length; i++) {
+            StackTraceElement element = stackElements[i];
+            LogQuick("at " + element.getClassName() + "." + element.getMethodName() + "(" + element.getFileName() + ":" + element.getLineNumber() + ")");
+        }
+        LogQuick("}}}} }}}} }}}} STACK TRACK");
     }
 }
