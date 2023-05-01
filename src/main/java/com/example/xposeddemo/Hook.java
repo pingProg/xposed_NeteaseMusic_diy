@@ -32,34 +32,20 @@ public class Hook implements IXposedHookLoadPackage {
     }
 
     public void playNextHandler() throws Throwable {
-        //HOOK的方法：public void next(boolean z, boolean z2, @Nullable MusicEndConfig musicEndConfig)
+        // HOOK的方法：
+        // [只在播放自然完成时调用] public void next()
+        // [所有next逻辑都需要调用] public void next(boolean z, boolean z2, @Nullable MusicEndConfig musicEndConfig)
 
         final Class c = classLoader.loadClass("com.netease.cloudmusic.service.PlayService");
         XposedBridge.hookAllMethods(c, "next", new XC_MethodHook() {
             @Override
-            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                super.afterHookedMethod(param);
-                if (param.args.length != 3) {
-                    LogQuick("因为参数数量不符合，所以跳过这个函数，避免多个next重载函数的重复触发");
-                    return;
-                }
-                if(isPlayingFinished()){
-                    isStopPlayNext = true;
-                }
-            }
-
-            @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 super.afterHookedMethod(param);
-                if (param.args.length != 3) {
-                    LogQuick("因为参数数量不符合，所以跳过这个函数，避免多个next重载函数的重复触发");
+                if (param.args.length != 0) {
                     return;
                 }
-                //触发public void next(boolean z, boolean z2, @Nullable MusicEndConfig musicEndConfig)
-                if(isStopPlayNext){
-                    isStopPlayNext = false;
-                    stopPlay();
-                }
+                LogQuick("**** 播放完成");
+                stopPlay();
             }
         });
     }
@@ -108,15 +94,6 @@ public class Hook implements IXposedHookLoadPackage {
         fieldOfPrivateVariable.setAccessible(true);
         Object privateVariable = fieldOfPrivateVariable.get(returnObjectOfInvoke);
         return (int) privateVariable;
-    }
-
-    private boolean isPlayingFinished()  throws Throwable {
-        int progress = getCurrentTimeMs();
-        int duration = getDuration();
-        LogQuick(String.format( "isPlayingFinished() : %d, %d", progress, duration));
-        //进度的差值在deviation之间算作完成播放
-        final int deviation = 1500;
-        return getDuration() - getCurrentTimeMs() <= deviation;
     }
 
     private static void LogQuick(String msg) throws Throwable {
