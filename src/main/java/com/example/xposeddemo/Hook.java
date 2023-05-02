@@ -16,7 +16,15 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class Hook implements IXposedHookLoadPackage {
     private ClassLoader classLoader = null;
-    private boolean isStopPlayNext = false;
+    private static final long maxShortSongsDuration_ms = 3 * 60 * 1000;
+    private static final int REP_INIT = -1;
+    private static final int REP_FALSE = 0;
+    private static final int REP_TRUE = 1;
+    private static final int REP_WILL_REPLAY = 2;
+    private static final int REP_REPLAYED = 3;
+    private int replay = REP_INIT;
+    private long replayMusicID = 0;
+
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam loadPackageParam) throws Throwable {
         if (!loadPackageParam.packageName.equals("com.netease.cloudmusic")) {
@@ -29,6 +37,8 @@ public class Hook implements IXposedHookLoadPackage {
         testHandler_monitorPlayButton();
 
         playNextHandler();
+
+        playPrevHandler();
     }
 
     public void playNextHandler() throws Throwable {
@@ -39,13 +49,103 @@ public class Hook implements IXposedHookLoadPackage {
         final Class c = classLoader.loadClass("com.netease.cloudmusic.service.PlayService");
         XposedBridge.hookAllMethods(c, "next", new XC_MethodHook() {
             @Override
+            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                super.beforeHookedMethod(param);
+                //自然完成播放
+                if (param.args.length == 0) {
+                    LogQuick("next：自然完成播放");
+                    LogQuick(String.format("++++ beforeHookedMethod : isReplay : %d", replay));
+                    if (isShortSongs()) {
+                        LogQuick(" ++++ beforeHookedMethod : isShortSongs");
+                        // 第一次启动时的shortSongs默认重放
+                        switch (replay) {
+                            case REP_INIT: {
+                                LogQuick(" ++++ beforeHookedMethod : first time start");
+                                replay = REP_TRUE;
+                                replayMusicID = getCurrentMusicID();
+                                break;
+                            }
+                            case REP_FALSE: {
+                                LogQuick(" ++++ beforeHookedMethod : set replay");
+                                replay = REP_TRUE;
+                                replayMusicID = getCurrentMusicID();
+                                break;
+                            }
+                            case REP_TRUE:
+                            case REP_REPLAYED:
+                            case REP_WILL_REPLAY:
+                            default:
+                                LogQuick("!!!! WARNING : UNEXPECTED replay : " + replay);
+                        }
+                    }
+                }
+            }
+
+            @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 super.afterHookedMethod(param);
-                if (param.args.length != 0) {
+                //自然完成播放
+                if (param.args.length == 0) {
+                    LogQuick(String.format("++++ afterHookedMethod : isReplay : %d",  replay));
+                    switch (replay) {
+                        case REP_TRUE: {
+                            LogQuick(" ++++ afterHookedMethod : replay");
+                            replay = REP_WILL_REPLAY;
+                            KeyPrevious();
+                            break;
+                        }
+                        case REP_WILL_REPLAY:
+                        case REP_FALSE:
+                        case REP_INIT:
+                        case REP_REPLAYED:
+                        default:{
+                            LogQuick(" ++++ afterHookedMethod : reset replay");
+                            replay = REP_FALSE;
+                            replayMusicID = 0;
+                            break;
+                        }
+                    }
+                }
+                else {
+                    if(replay == REP_REPLAYED){
+                        LogQuick(" ++++ afterHookedMethod SKIP : reset replay");
+                        replay = REP_FALSE;
+                        replayMusicID = 0;
+                    }
+                }
+            }
+        });
+    }
+    public void playPrevHandler() throws Throwable {
+        final Class c = classLoader.loadClass("com.netease.cloudmusic.service.PlayService");
+        XposedBridge.hookAllMethods(c, "prev", new XC_MethodHook() {
+            // HOOK的方法：
+            // [所有prev逻辑都需要调用] public void prev(boolean z, boolean z2, @Nullable MusicEndConfig musicEndConfig)
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                super.beforeHookedMethod(param);
+                //点击上一曲
+                if (param.args.length != 3) {
                     return;
                 }
-                LogQuick("**** 播放完成");
-                stopPlay();
+
+                LogQuick(String.format("++++ playPrevHandler beforeHookedMethod : isReplay : %d", replay));
+                switch (replay) {
+                    case REP_WILL_REPLAY:{
+                        LogQuick("prev：REP_WILL_REPLAY change to REP_REPLAYED");
+                        replay = REP_REPLAYED;
+                        break;
+                    }
+                    case REP_REPLAYED:
+                    case REP_FALSE:
+                    case REP_INIT:
+                    case REP_TRUE:
+                    default:{
+                        LogQuick("prev：reset replay");
+                        replay = REP_FALSE;
+                        replayMusicID = 0;
+                    }
+                }
             }
         });
     }
@@ -55,7 +155,7 @@ public class Hook implements IXposedHookLoadPackage {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 super.afterHookedMethod(param);
-//                int ret = getCurrentTimeMs(classLoader);
+//                int ret = getCurrentTimeMs();
 //                LogQuick(String.format("^^^^^^^ ret : %d", ret));
             }
         });
@@ -74,19 +174,26 @@ public class Hook implements IXposedHookLoadPackage {
         });
     }
 
-    private static void stopPlay() throws Throwable {
-        LogQuick("%%%% stopPlay");
+    private static void KeyPlayPause() throws Throwable {
+        LogQuick("%%%% KeyPlayPause");
         Context context = (Context) AndroidAppHelper.currentApplication();
         AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE));
-        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE));
+        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
+        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
     }
-    private int getCurrentTimeMs(){
+    private static void KeyPrevious() throws Throwable {
+        LogQuick("%%%% KeyPrevious");
+        Context context = (Context) AndroidAppHelper.currentApplication();
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS));
+        audioManager.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PREVIOUS));
+    }
+    private int getCurrentTime_ms(){
         Class c = XposedHelpers.findClass("com.netease.cloudmusic.service.PlayService", classLoader);
         return (int) XposedHelpers.callStaticMethod(c, "getCurrentTime");
     }
 
-    private int getDuration() throws Throwable {
+    private int getDuration_ms() throws Throwable {
         // NOTE : 使用反射，获取java的私有成员变量
         Class c = XposedHelpers.findClass("com.netease.cloudmusic.service.PlayService", classLoader);
         Object returnObjectOfInvoke = XposedHelpers.callStaticMethod(c, "getPlayingMusicInfo");
@@ -95,6 +202,32 @@ public class Hook implements IXposedHookLoadPackage {
         Object privateVariable = fieldOfPrivateVariable.get(returnObjectOfInvoke);
         return (int) privateVariable;
     }
+
+//    private boolean isPlayFinished() throws Throwable {
+//        int delta_ms = 2 * 1000;
+//        return Math.abs(getDuration_ms() - getCurrentTime_ms()) <= delta_ms;
+//    }
+
+    private long getCurrentMusicID() throws Throwable {
+        Class c = XposedHelpers.findClass("com.netease.cloudmusic.service.PlayService", classLoader);
+        Object returnObjectOfInvoke = XposedHelpers.callStaticMethod(c, "getPlayingMusicInfo");
+        Field fieldOfPrivateVariable = returnObjectOfInvoke.getClass().getDeclaredField("id");
+        fieldOfPrivateVariable.setAccessible(true);
+        Object privateVariable = fieldOfPrivateVariable.get(returnObjectOfInvoke);
+        return (long) privateVariable;
+    }
+
+    private boolean isShortSongs() throws Throwable {
+        return getDuration_ms() <= maxShortSongsDuration_ms;
+    }
+
+    private static long getTimeStamp() {
+        return System.currentTimeMillis();
+    }
+
+//    private void clearReplayVar() {
+//        replay = REP_FALSE;
+//    }
 
     private static void LogQuick(String msg) throws Throwable {
         Log.d("XPOSED TEST", msg);
