@@ -12,6 +12,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Xposeddemo"
         tools:targetApi="31" >
+
+        <provider
+            android:name=".DataProvider"
+            android:authorities="com.example.studentprovider"
+            android:exported="true"/>
+
         <!-- 是否是xposed模块，xposed根据这个来判断是否是模块 -->
         <meta-data
             android:name="xposedmodule"
